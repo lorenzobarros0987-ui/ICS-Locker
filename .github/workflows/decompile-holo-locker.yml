@@ -3,9 +3,6 @@ name: Descompilar Holo Locker
 on:
   workflow_dispatch:
   push:
-    paths:
-      - "**.apk"
-      - "**.APK"
 
 env:
   APKTOOL_VERSION: "2.10.0"
