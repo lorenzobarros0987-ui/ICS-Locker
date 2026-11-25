@@ -1,0 +1,78 @@
+name: Descompilar Holo Locker
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "**.apk"
+      - "**.APK"
+
+env:
+  APKTOOL_VERSION: "2.10.0"
+  JADX_VERSION: "1.5.0"
+
+jobs:
+  decompile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o repositório
+        uses: actions/checkout@v4
+
+      - name: Procurar o APK em qualquer pasta do repositório
+        run: |
+          echo "Arquivos do repositório:"
+          find . -not -path "./.git/*" -type f | head -50
+          APK=$(find . -not -path "./.git/*" -type f -iname "*.apk" | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "::error::Nenhum .apk no repositório. Confira se o arquivo foi enviado para ESTE repositório e nesta branch, e se o nome termina em .apk (e não .apk.zip)."
+            exit 1
+          fi
+          echo "APK encontrado: $APK"
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
+
+      - name: Instalar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Baixar apktool e jadx
+        run: |
+          mkdir -p tools
+          curl -fsSL -o tools/apktool.jar \
+            "https://github.com/iBotPeaches/Apktool/releases/download/v${APKTOOL_VERSION}/apktool_${APKTOOL_VERSION}.jar"
+          curl -fsSL -o tools/jadx.zip \
+            "https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/jadx-${JADX_VERSION}.zip"
+          unzip -q tools/jadx.zip -d tools/jadx
+
+      - name: apktool (recursos decodificados + smali)
+        run: |
+          mkdir -p out
+          java -jar tools/apktool.jar d -f "$APK_PATH" -o out/apktool
+
+      - name: jadx (código Java legível)
+        run: |
+          # jadx pode avisar de métodos que não consegue converter; mesmo assim ele gera o resto
+          tools/jadx/bin/jadx --show-bad-code -d out/jadx "$APK_PATH" || true
+
+      - name: Conteúdo bruto do APK (assets, fontes, manifest original)
+        run: |
+          mkdir -p out/raw
+          unzip -q -o "$APK_PATH" -d out/raw
+
+      - name: Resumo do que saiu
+        run: |
+          echo "## Descompilação concluída" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "layouts:   $(ls out/apktool/res/layout* 2>/dev/null | wc -l)" >> "$GITHUB_STEP_SUMMARY"
+          echo "drawables: $(find out/apktool/res -path '*drawable*' -type f | wc -l)" >> "$GITHUB_STEP_SUMMARY"
+          echo "smali:     $(find out/apktool/smali* -name '*.smali' 2>/dev/null | wc -l)" >> "$GITHUB_STEP_SUMMARY"
+          echo "java:      $(find out/jadx/sources -name '*.java' 2>/dev/null | wc -l)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enviar o resultado (baixe em Artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: holo-locker-descompilado
+          path: out/
+          retention-days: 30
