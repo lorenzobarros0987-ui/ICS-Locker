@@ -4,11 +4,10 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - "Holo_Locker_1_2_0_com_mobint_locker.apk"
-      - ".github/workflows/decompile-holo-locker.yml"
+      - "**.apk"
+      - "**.APK"
 
 env:
-  APK_FILE: Holo_Locker_1_2_0_com_mobint_locker.apk
   APKTOOL_VERSION: "2.10.0"
   JADX_VERSION: "1.5.0"
 
@@ -19,13 +18,17 @@ jobs:
       - name: Baixar o repositório
         uses: actions/checkout@v4
 
-      - name: Conferir se o APK está na raiz do repositório
+      - name: Procurar o APK em qualquer pasta do repositório
         run: |
-          if [ ! -f "$APK_FILE" ]; then
-            echo "::error::Não achei $APK_FILE na raiz do repositório. Suba o APK com esse nome exato."
-            ls -la
+          echo "Arquivos do repositório:"
+          find . -not -path "./.git/*" -type f | head -50
+          APK=$(find . -not -path "./.git/*" -type f -iname "*.apk" | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "::error::Nenhum .apk no repositório. Confira se o arquivo foi enviado para ESTE repositório e nesta branch, e se o nome termina em .apk (e não .apk.zip)."
             exit 1
           fi
+          echo "APK encontrado: $APK"
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
 
       - name: Instalar Java 17
         uses: actions/setup-java@v4
@@ -45,17 +48,17 @@ jobs:
       - name: apktool (recursos decodificados + smali)
         run: |
           mkdir -p out
-          java -jar tools/apktool.jar d -f "$APK_FILE" -o out/apktool
+          java -jar tools/apktool.jar d -f "$APK_PATH" -o out/apktool
 
       - name: jadx (código Java legível)
         run: |
           # jadx pode avisar de métodos que não consegue converter; mesmo assim ele gera o resto
-          tools/jadx/bin/jadx --show-bad-code -d out/jadx "$APK_FILE" || true
+          tools/jadx/bin/jadx --show-bad-code -d out/jadx "$APK_PATH" || true
 
       - name: Conteúdo bruto do APK (assets, fontes, manifest original)
         run: |
           mkdir -p out/raw
-          unzip -q -o "$APK_FILE" -d out/raw
+          unzip -q -o "$APK_PATH" -d out/raw
 
       - name: Resumo do que saiu
         run: |
